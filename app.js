@@ -6,6 +6,7 @@ let currentSearchTerm = '';
 let currentSortBy = 'name';
 let currentRegionFilter = 'all'; // 'all' or specific region name
 let sidebarOpen = false; // Sidebar visibility state for mobile
+let isFetching = false; // Flag to prevent multiple simultaneous fetches
 
 // Resort data with coordinates for worldwide ski resorts
 const resorts = [
@@ -746,39 +747,145 @@ async function testAPIConnectivity() {
     }
 }
 
+// Cancel loading function (global for onclick handler)
+window.cancelLoading = function() {
+    console.log('Loading cancelled by user');
+    const loadingState = document.getElementById('loadingState');
+    const errorState = document.getElementById('errorState');
+    const errorMessage = document.getElementById('errorMessage');
+    
+    // Reset fetching flag so user can retry
+    isFetching = false;
+    
+    if (loadingState) {
+        loadingState.classList.add('hidden');
+        loadingState.style.display = 'none';
+    }
+    if (errorState && errorMessage) {
+        errorState.classList.remove('hidden');
+        errorMessage.textContent = 'Loading was cancelled. Please refresh to try again.';
+    }
+    
+    // Render whatever data we have so far
+    if (allResortData && allResortData.length > 0) {
+        applyFiltersAndSort();
+    }
+};
+
+// Cache management
+const CACHE_KEY = 'snowfall_resort_data';
+const CACHE_TIMESTAMP_KEY = 'snowfall_cache_timestamp';
+const CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+
+function getCachedData() {
+    try {
+        const timestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
+        const data = localStorage.getItem(CACHE_KEY);
+        
+        if (!timestamp || !data) return null;
+        
+        const cacheAge = Date.now() - parseInt(timestamp);
+        if (cacheAge > CACHE_DURATION) {
+            return null; // Cache expired
+        }
+        
+        return JSON.parse(data);
+    } catch (error) {
+        console.error('Error reading cache:', error);
+        return null;
+    }
+}
+
+function setCachedData(data) {
+    try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+    } catch (error) {
+        console.error('Error saving cache:', error);
+    }
+}
+
 // Fetch data for all resorts
-async function fetchAllResorts() {
+async function fetchAllResorts(showLoadingUI = true) {
+    // Prevent multiple simultaneous fetches
+    if (isFetching) {
+        console.log('Fetch already in progress, skipping duplicate call');
+        return;
+    }
+    
+    isFetching = true;
+    
     const loadingState = document.getElementById('loadingState');
     const errorState = document.getElementById('errorState');
     const errorMessage = document.getElementById('errorMessage');
     const resortsContainer = document.getElementById('resortsContainer');
     const lastUpdate = document.getElementById('lastUpdate');
+    const cancelBtn = document.getElementById('cancelLoadingBtn');
     
-    // Show loading state
-    loadingState.classList.remove('hidden');
-    errorState.classList.add('hidden');
-    resortsContainer.innerHTML = '';
+    // Validate required elements exist
+    if (!loadingState || !errorState || !errorMessage || !resortsContainer) {
+        console.error('Required DOM elements not found');
+        isFetching = false;
+        return;
+    }
+    
+    // Show loading state only if showLoadingUI is true
+    if (showLoadingUI) {
+        loadingState.classList.remove('hidden');
+        loadingState.style.display = '';
+        errorState.classList.add('hidden');
+        resortsContainer.innerHTML = '';
+        
+        // Show cancel button after 30 seconds
+        if (cancelBtn) {
+            cancelBtn.classList.add('hidden');
+            setTimeout(() => {
+                if (cancelBtn && loadingState && !loadingState.classList.contains('hidden')) {
+                    cancelBtn.classList.remove('hidden');
+                }
+            }, 30000);
+        }
+    }
     
     console.log(`Starting to fetch data for ${resorts.length} resorts...`);
     
-    // Update loading progress
+    // Update loading progress (only if showing loading UI)
     const loadingProgress = document.getElementById('loadingProgress');
     const updateProgress = (message) => {
-        if (loadingProgress) {
+        if (showLoadingUI && loadingProgress) {
             loadingProgress.textContent = message;
         }
         console.log(message);
     };
     
-    updateProgress(`Testing API connectivity...`);
+    if (showLoadingUI) {
+        updateProgress(`Testing API connectivity...`);
+    }
     
-    // Set a global timeout to prevent infinite loading (5 minutes max)
+    // Declare results outside try block so timeout callback can access it
+    let results = [];
+    
+    // Set a global timeout to prevent infinite loading (2 minutes max)
     let globalTimeout = setTimeout(() => {
-        loadingState.classList.add('hidden');
-        errorState.classList.remove('hidden');
-        errorMessage.textContent = 'Request timed out. The API may be slow or unavailable. Please try refreshing the page.';
         console.error('Global timeout reached - aborting fetch');
-    }, 300000); // 5 minutes
+        if (showLoadingUI) {
+            if (loadingState) {
+                loadingState.classList.add('hidden');
+                loadingState.style.display = 'none';
+            }
+            if (errorState) {
+                errorState.classList.remove('hidden');
+            }
+            if (errorMessage) {
+                errorMessage.textContent = 'Request timed out. The API may be slow or unavailable. Please try refreshing the page.';
+            }
+        }
+        // Render whatever data we have so far
+        if (results && results.length > 0) {
+            allResortData = results;
+            applyFiltersAndSort();
+        }
+    }, 120000); // 2 minutes
     
     try {
         // Test API connectivity first
@@ -789,18 +896,28 @@ async function fetchAllResorts() {
             const apiAvailable = await testAPIConnectivity();
             if (!apiAvailable) {
                 clearTimeout(globalTimeout);
-                loadingState.classList.add('hidden');
-                errorState.classList.remove('hidden');
-                errorMessage.innerHTML = 'Unable to connect to the weather API.<br><br>Possible causes:<br>• CORS policy blocking requests<br>• API temporarily unavailable<br>• Network connectivity issues<br><br>Please check the browser console (F12) for detailed error messages.';
+                if (showLoadingUI) {
+                    if (loadingState) {
+                        loadingState.classList.add('hidden');
+                        loadingState.style.display = 'none';
+                    }
+                    errorState.classList.remove('hidden');
+                    errorMessage.innerHTML = 'Unable to connect to the weather API.<br><br>Possible causes:<br>• CORS policy blocking requests<br>• API temporarily unavailable<br>• Network connectivity issues<br><br>Please check the browser console (F12) for detailed error messages.';
+                }
                 console.error('API connectivity test failed - aborting fetch');
                 updateProgress('API test failed');
                 return;
             }
         } catch (testError) {
             clearTimeout(globalTimeout);
-            loadingState.classList.add('hidden');
-            errorState.classList.remove('hidden');
-            errorMessage.innerHTML = `Error during API connectivity test: ${testError.message}<br><br>Check the browser console (F12) for more details.`;
+            if (showLoadingUI) {
+                if (loadingState) {
+                    loadingState.classList.add('hidden');
+                    loadingState.style.display = 'none';
+                }
+                errorState.classList.remove('hidden');
+                errorMessage.innerHTML = `Error during API connectivity test: ${testError.message}<br><br>Check the browser console (F12) for more details.`;
+            }
             console.error('Exception during API connectivity test:', testError);
             updateProgress('API test error');
             return;
@@ -808,61 +925,96 @@ async function fetchAllResorts() {
         
         updateProgress('API test passed. Starting to fetch resort data...');
         
-        // Fetch resorts in batches to avoid overwhelming the API
-        // Process in smaller batches to reduce rate limiting issues
-        const batchSize = 5; // Reduced batch size
-        const results = [];
-        const totalBatches = Math.ceil(resorts.length / batchSize);
+        // Fetch resorts concurrently with controlled concurrency
+        // Use a pool of concurrent requests (40 concurrent requests)
+        const concurrencyLimit = 40;
+        results = [];
+        let completedCount = 0;
+        const totalResorts = resorts.length;
         
-        for (let i = 0; i < resorts.length; i += batchSize) {
-            const batch = resorts.slice(i, i + batchSize);
-            const batchNumber = Math.floor(i / batchSize) + 1;
-            const progressMsg = `Fetching batch ${batchNumber}/${totalBatches} (${i + 1}-${Math.min(i + batchSize, resorts.length)} of ${resorts.length})...`;
-            updateProgress(progressMsg);
-            console.log(progressMsg);
-            
+        // Helper function to update progress with completion count
+        const updateProgressCount = () => {
+            const percentage = Math.round((completedCount / totalResorts) * 100);
+            updateProgress(`Fetching resorts... (${completedCount}/${totalResorts} completed, ${percentage}%)`);
+        };
+        
+        // Array to store results in order
+        const resultsArray = new Array(totalResorts);
+        
+        // Process resorts with controlled concurrency
+        const processResort = async (index) => {
             try {
-                const batchResults = await Promise.all(
-                    batch.map(resort => fetchResortData(resort))
-                );
-                results.push(...batchResults);
-                
-                const successCount = batchResults.filter(r => r.success).length;
-                const batchCompleteMsg = `Batch ${batchNumber}/${totalBatches} completed: ${successCount}/${batch.length} successful`;
-                updateProgress(batchCompleteMsg);
-                console.log(batchCompleteMsg);
-            } catch (batchError) {
-                console.error(`Error in batch ${batchNumber}:`, batchError);
-                // Add error results for this batch
-                batch.forEach(resort => {
-                    results.push({
-                        ...resort,
-                        error: batchError.message,
-                        success: false
-                    });
-                });
+                const result = await fetchResortData(resorts[index]);
+                resultsArray[index] = result;
+            } catch (error) {
+                resultsArray[index] = {
+                    ...resorts[index],
+                    error: error.message || 'Unknown error',
+                    success: false
+                };
+            } finally {
+                completedCount++;
+                updateProgressCount();
             }
-            
-            // Longer delay between batches to avoid rate limiting (500ms)
-            if (i + batchSize < resorts.length) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
+        };
+        
+        // Create concurrent workers
+        const workers = [];
+        let currentIndex = 0;
+        
+        // Start initial batch of concurrent requests
+        for (let i = 0; i < Math.min(concurrencyLimit, totalResorts); i++) {
+            const worker = (async () => {
+                while (currentIndex < totalResorts) {
+                    const index = currentIndex++;
+                    if (index < totalResorts) {
+                        await processResort(index);
+                    }
+                }
+            })();
+            workers.push(worker);
         }
+        
+        // Wait for all workers to complete
+        await Promise.all(workers);
+        
+        // Convert results array to results array (maintain order)
+        results = resultsArray;
         
         clearTimeout(globalTimeout);
         
         const successCount = results.filter(r => r.success).length;
         const errorCount = results.filter(r => !r.success).length;
-        updateProgress(`Completed! ${successCount} successful, ${errorCount} errors`);
         
-        // Hide loading state
-        loadingState.classList.add('hidden');
+        if (showLoadingUI) {
+            updateProgress(`Completed! ${successCount} successful, ${errorCount} errors`);
+        }
+        
+        // Save to cache after successful fetch
+        setCachedData(results);
+        
+        // Hide loading state only if we showed it
+        if (showLoadingUI) {
+            console.log('Hiding loading state...');
+            if (loadingState) {
+                loadingState.classList.add('hidden');
+                loadingState.style.display = 'none';
+                console.log('Loading state hidden successfully');
+            } else {
+                console.error('Loading state element not found!');
+            }
+            
+            // Hide cancel button
+            if (cancelBtn) {
+                cancelBtn.classList.add('hidden');
+            }
+        }
         
         console.log(`Completed fetching data. Success: ${successCount}, Errors: ${errorCount}`);
         
-        // Check for errors
+        // Check for errors (only show error state if showing loading UI, or if it's a critical error)
         const errors = results.filter(r => !r.success);
-        if (errors.length > 0) {
+        if (errors.length > 0 && showLoadingUI) {
             errorState.classList.remove('hidden');
             const errorResorts = errors.slice(0, 5).map(r => r.name).join(', ');
             const moreErrors = errors.length > 5 ? ` and ${errors.length - 5} more` : '';
@@ -875,7 +1027,9 @@ async function fetchAllResorts() {
         
         // Update last update time
         const updateTime = new Date().toISOString();
-        lastUpdate.textContent = `Last updated: ${formatRelativeTime(updateTime)}`;
+        if (lastUpdate) {
+            lastUpdate.textContent = `Last updated: ${formatRelativeTime(updateTime)}`;
+        }
         
         // Store all resort data
         allResortData = results;
@@ -885,11 +1039,29 @@ async function fetchAllResorts() {
         
     } catch (error) {
         clearTimeout(globalTimeout);
-        loadingState.classList.add('hidden');
-        errorState.classList.remove('hidden');
-        errorMessage.textContent = `Failed to fetch data: ${error.message}. Please check the browser console for details.`;
+        // Ensure loading state is always hidden on error (only if we showed it)
+        if (showLoadingUI) {
+            if (loadingState) {
+                loadingState.classList.add('hidden');
+                loadingState.style.display = 'none';
+            }
+            errorState.classList.remove('hidden');
+            errorMessage.textContent = `Failed to fetch data: ${error.message}. Please check the browser console for details.`;
+        }
         console.error('Error fetching resorts:', error);
         console.error('Error stack:', error.stack);
+    } finally {
+        // Reset fetching flag
+        isFetching = false;
+        
+        // Final safeguard - ensure loading state is hidden
+        setTimeout(() => {
+            if (loadingState && loadingState.style.display !== 'none') {
+                console.warn('Loading state was still visible, forcing hide');
+                loadingState.classList.add('hidden');
+                loadingState.style.display = 'none';
+            }
+        }, 1000);
     }
 }
 
@@ -1016,6 +1188,13 @@ function renderResorts(resortData) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
+    // Prevent multiple initializations
+    if (window.appInitialized) {
+        console.log('App already initialized, skipping duplicate initialization');
+        return;
+    }
+    
+    window.appInitialized = true;
     console.log('Page loaded, initializing app...');
     
     try {
@@ -1057,16 +1236,46 @@ document.addEventListener('DOMContentLoaded', () => {
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => {
                 console.log('Refresh button clicked');
-                fetchAllResorts();
+                fetchAllResorts(true); // Show loading UI for manual refresh
             });
             console.log('Refresh button handler attached');
         } else {
             console.error('Refresh button not found');
         }
         
-        console.log('Starting initial data fetch...');
-        // Fetch initial data
-        fetchAllResorts();
+        // Check for cached data first
+        const cachedData = getCachedData();
+        const lastUpdate = document.getElementById('lastUpdate');
+        
+        if (cachedData && cachedData.length > 0) {
+            // Load cached data immediately - instant load!
+            console.log('Loading cached data...');
+            allResortData = cachedData;
+            applyFiltersAndSort();
+            
+            // Show subtle "Refreshing..." indicator
+            if (lastUpdate) {
+                lastUpdate.textContent = 'Refreshing data...';
+            }
+            
+            // Fetch fresh data in background (no loading screen)
+            console.log('Fetching fresh data in background...');
+            fetchAllResorts(false).then(() => {
+                if (lastUpdate) {
+                    const updateTime = new Date().toISOString();
+                    lastUpdate.textContent = `Last updated: ${formatRelativeTime(updateTime)}`;
+                }
+            }).catch(error => {
+                console.error('Background refresh failed:', error);
+                if (lastUpdate) {
+                    lastUpdate.textContent = 'Refresh failed - showing cached data';
+                }
+            });
+        } else {
+            // No cache - show loading screen and fetch
+            console.log('No cached data found, starting initial fetch...');
+            fetchAllResorts(true);
+        }
         
     } catch (error) {
         console.error('Error during initialization:', error);
@@ -1084,9 +1293,108 @@ document.addEventListener('DOMContentLoaded', () => {
 if (document.readyState === 'loading') {
     console.log('DOM is still loading, waiting for DOMContentLoaded...');
 } else {
-    console.log('DOM already loaded, executing immediately...');
-    // Trigger the DOMContentLoaded handler manually
-    const event = new Event('DOMContentLoaded');
-    document.dispatchEvent(event);
+    console.log('DOM already loaded, executing initialization...');
+    // Don't manually dispatch event - let the event listener handle it naturally
+    // The DOMContentLoaded event may have already fired, so we'll just run the init code directly
+    const initCode = () => {
+        console.log('Page loaded, initializing app...');
+        
+        try {
+            // Initialize dark mode
+            initDarkMode();
+            console.log('Dark mode initialized');
+            
+            // Set up event listeners
+            const searchInput = document.getElementById('searchInput');
+            const sortSelect = document.getElementById('sortSelect');
+            const regionSelect = document.getElementById('regionSelect');
+            
+            if (!searchInput || !sortSelect || !regionSelect) {
+                throw new Error('Required DOM elements not found');
+            }
+            
+            console.log('Event listeners setting up...');
+            
+            // Search input event listener
+            searchInput.addEventListener('input', (e) => {
+                currentSearchTerm = e.target.value;
+                applyFiltersAndSort();
+            });
+            
+            // Region select event listener
+            regionSelect.addEventListener('change', (e) => {
+                currentRegionFilter = e.target.value;
+                applyFiltersAndSort();
+            });
+            
+            // Sort select event listener
+            sortSelect.addEventListener('change', (e) => {
+                currentSortBy = e.target.value;
+                applyFiltersAndSort();
+            });
+            
+            // Add refresh button handler
+            const refreshBtn = document.getElementById('refreshBtn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => {
+                    console.log('Refresh button clicked');
+                    fetchAllResorts(true); // Show loading UI for manual refresh
+                });
+                console.log('Refresh button handler attached');
+            } else {
+                console.error('Refresh button not found');
+            }
+            
+            // Check for cached data first
+            const cachedData = getCachedData();
+            const lastUpdate = document.getElementById('lastUpdate');
+            
+            if (cachedData && cachedData.length > 0) {
+                // Load cached data immediately - instant load!
+                console.log('Loading cached data...');
+                allResortData = cachedData;
+                applyFiltersAndSort();
+                
+                // Show subtle "Refreshing..." indicator
+                if (lastUpdate) {
+                    lastUpdate.textContent = 'Refreshing data...';
+                }
+                
+                // Fetch fresh data in background (no loading screen)
+                console.log('Fetching fresh data in background...');
+                fetchAllResorts(false).then(() => {
+                    if (lastUpdate) {
+                        const updateTime = new Date().toISOString();
+                        lastUpdate.textContent = `Last updated: ${formatRelativeTime(updateTime)}`;
+                    }
+                }).catch(error => {
+                    console.error('Background refresh failed:', error);
+                    if (lastUpdate) {
+                        lastUpdate.textContent = 'Refresh failed - showing cached data';
+                    }
+                });
+            } else {
+                // No cache - show loading screen and fetch
+                console.log('No cached data found, starting initial fetch...');
+                fetchAllResorts(true);
+            }
+            
+        } catch (error) {
+            console.error('Error during initialization:', error);
+            const errorState = document.getElementById('errorState');
+            const errorMessage = document.getElementById('errorMessage');
+            const loadingState = document.getElementById('loadingState');
+            
+            if (loadingState) loadingState.classList.add('hidden');
+            if (errorState) errorState.classList.remove('hidden');
+            if (errorMessage) errorMessage.textContent = `Initialization error: ${error.message}. Please check the browser console.`;
+        }
+    };
+    
+    // Only run if not already initialized
+    if (!window.appInitialized) {
+        window.appInitialized = true;
+        initCode();
+    }
 }
 

@@ -103,6 +103,9 @@
             <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-white/30 border-t-white"></div>
             <p class="mt-4 text-white font-medium">Fetching snowfall data...</p>
             <p id="loadingProgress" class="mt-2 text-white/70 text-sm">Initializing...</p>
+            <button id="cancelLoadingBtn" onclick="cancelLoading()" class="mt-4 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hidden">
+                Cancel Loading
+            </button>
         </div>
 
         <!-- Error State -->
