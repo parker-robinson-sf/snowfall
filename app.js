@@ -48,6 +48,20 @@ const resorts = [
     // Montana
     { name: 'Big Sky', state: 'Montana', country: 'United States', region: 'Rocky Mountains', lat: 45.2847, lon: -111.4003 },
     
+    // Oregon
+    { name: 'Mt. Bachelor', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 44.003, lon: -121.677 },
+    { name: 'Mt. Hood Meadows', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 45.332, lon: -121.665 },
+    { name: 'Timberline Lodge', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 45.331, lon: -121.710 },
+    { name: 'Mt. Hood Skibowl', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 45.303, lon: -121.775 },
+    { name: 'Summit Pass (Summit Ski Area)', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 45.304, lon: -121.755 },
+    { name: 'Cooper Spur Mountain Resort', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 45.426, lon: -121.624 },
+    { name: 'Hoodoo', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 44.407, lon: -121.872 },
+    { name: 'Willamette Pass', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 43.599, lon: -122.036 },
+    { name: 'Mt. Ashland', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 42.081, lon: -122.704 },
+    { name: 'Anthony Lakes Mountain Resort', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 44.957, lon: -118.233 },
+    { name: 'Warner Canyon', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 42.188, lon: -120.374 },
+    { name: 'Ferguson Ridge (Fergi)', state: 'Oregon', country: 'United States', region: 'Cascade Range', lat: 45.350, lon: -117.217 },
+    
     // North America - Canada
     { name: 'Whistler', country: 'Canada', region: 'Coast Mountains', lat: 50.1163, lon: -122.9574 },
     { name: 'Banff / Lake Louise', country: 'Canada', region: 'Canadian Rockies', lat: 51.4254, lon: -116.1773 },
@@ -244,6 +258,20 @@ const resortWebsites = {
     'Stowe': 'https://www.stowe.com',
     'Bretton Woods': 'https://www.brettonwoods.com',
     'Big Sky': 'https://www.bigskyresort.com',
+    
+    // Oregon
+    'Mt. Bachelor': 'https://www.mtbachelor.com',
+    'Mt. Hood Meadows': 'https://www.skihood.com',
+    'Timberline Lodge': 'https://www.timberlinelodge.com',
+    'Mt. Hood Skibowl': 'https://www.skibowl.com',
+    'Summit Pass (Summit Ski Area)': 'https://www.timberlinelodge.com/mountain/summit-pass',
+    'Cooper Spur Mountain Resort': 'https://www.cooperspur.com',
+    'Hoodoo': 'https://www.hoodoo.com',
+    'Willamette Pass': 'https://www.willamettepass.ski',
+    'Mt. Ashland': 'https://www.mtashland.com',
+    'Anthony Lakes Mountain Resort': 'https://www.anthonylakes.com',
+    'Warner Canyon': 'https://www.lakecountychamber.org/skihill.html',
+    'Ferguson Ridge (Fergi)': 'https://www.skifergi.com',
     
     // North America - Canada
     'Whistler': 'https://www.whistlerblackcomb.com',
