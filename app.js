@@ -1,6 +1,7 @@
 // Global state for filtering and sorting
 console.log('app.js script loaded');
 window.appScriptLoaded = true; // Mark script as loaded immediately (separate from initialization)
+// Last updated: 2024
 
 let allResortData = []; // Store all fetched resort data
 let currentSearchTerm = '';
