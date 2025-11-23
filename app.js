@@ -3,7 +3,7 @@ console.log('app.js script loaded');
 
 let allResortData = []; // Store all fetched resort data
 let currentSearchTerm = '';
-let currentSortBy = 'name';
+let currentSortBy = 'snowfall24h';
 let currentRegionFilter = 'all'; // 'all' or specific region name
 let sidebarOpen = false; // Sidebar visibility state for mobile
 let isFetching = false; // Flag to prevent multiple simultaneous fetches
