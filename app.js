@@ -697,17 +697,35 @@ async function fetchResortData(resort) {
 async function testAPIConnectivity() {
     try {
         const testUrl = 'https://api.open-meteo.com/v1/forecast?latitude=39.6061&longitude=-106.3550&hourly=snowfall&timezone=auto&forecast_days=1';
-        const response = await fetch(testUrl, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-            },
-            mode: 'cors',
-            cache: 'no-cache'
-        });
+        
+        // Add timeout to connectivity test (10 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        console.log('Testing API connectivity to:', testUrl);
+        
+        let response;
+        try {
+            response = await fetch(testUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                },
+                mode: 'cors',
+                cache: 'no-cache',
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+        } catch (fetchError) {
+            clearTimeout(timeoutId);
+            if (fetchError.name === 'AbortError') {
+                throw new Error('API connectivity test timed out after 10 seconds');
+            }
+            throw new Error(`Network error: ${fetchError.message}`);
+        }
         
         if (!response.ok) {
-            throw new Error(`API test failed: HTTP ${response.status}`);
+            throw new Error(`API test failed: HTTP ${response.status} ${response.statusText}`);
         }
         
         const data = await response.json();
@@ -719,6 +737,11 @@ async function testAPIConnectivity() {
         return true;
     } catch (error) {
         console.error('API connectivity test failed:', error);
+        console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
         return false;
     }
 }
@@ -760,14 +783,26 @@ async function fetchAllResorts() {
     try {
         // Test API connectivity first
         updateProgress('Testing API connectivity...');
-        const apiAvailable = await testAPIConnectivity();
-        if (!apiAvailable) {
+        console.log('Starting API connectivity test...');
+        
+        try {
+            const apiAvailable = await testAPIConnectivity();
+            if (!apiAvailable) {
+                clearTimeout(globalTimeout);
+                loadingState.classList.add('hidden');
+                errorState.classList.remove('hidden');
+                errorMessage.innerHTML = 'Unable to connect to the weather API.<br><br>Possible causes:<br>• CORS policy blocking requests<br>• API temporarily unavailable<br>• Network connectivity issues<br><br>Please check the browser console (F12) for detailed error messages.';
+                console.error('API connectivity test failed - aborting fetch');
+                updateProgress('API test failed');
+                return;
+            }
+        } catch (testError) {
             clearTimeout(globalTimeout);
             loadingState.classList.add('hidden');
             errorState.classList.remove('hidden');
-            errorMessage.textContent = 'Unable to connect to the weather API. Please check your internet connection and try again. If the problem persists, the API may be temporarily unavailable. Check the browser console (F12) for detailed error messages.';
-            console.error('API connectivity test failed - aborting fetch');
-            updateProgress('API test failed');
+            errorMessage.innerHTML = `Error during API connectivity test: ${testError.message}<br><br>Check the browser console (F12) for more details.`;
+            console.error('Exception during API connectivity test:', testError);
+            updateProgress('API test error');
             return;
         }
         
