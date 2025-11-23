@@ -201,7 +201,7 @@
         // Check if app.js loaded successfully
         window.addEventListener('load', function() {
             setTimeout(function() {
-                if (typeof window.appInitialized === 'undefined') {
+                if (typeof window.appScriptLoaded === 'undefined') {
                     console.error('app.js may not have loaded correctly');
                     const errorState = document.getElementById('errorState');
                     const errorMessage = document.getElementById('errorMessage');
