@@ -611,13 +611,17 @@ async function fetchResortData(resort) {
                     'Accept': 'application/json',
                 },
                 mode: 'cors',
-                cache: 'no-cache'
+                cache: 'no-cache',
+                credentials: 'omit'
             });
         } catch (fetchError) {
             clearTimeout(timeoutId);
             // Check for CORS or network errors
             if (fetchError.name === 'TypeError' && fetchError.message.includes('fetch')) {
                 throw new Error('Network error - CORS or connectivity issue. Check browser console for details.');
+            }
+            if (fetchError.name === 'AbortError') {
+                throw new Error('Request timeout - API took too long to respond');
             }
             throw fetchError;
         }
@@ -714,19 +718,29 @@ async function testAPIConnectivity() {
                 },
                 mode: 'cors',
                 cache: 'no-cache',
-                signal: controller.signal
+                signal: controller.signal,
+                credentials: 'omit'
             });
             clearTimeout(timeoutId);
         } catch (fetchError) {
             clearTimeout(timeoutId);
+            console.error('Fetch error details:', {
+                name: fetchError.name,
+                message: fetchError.message,
+                stack: fetchError.stack
+            });
             if (fetchError.name === 'AbortError') {
                 throw new Error('API connectivity test timed out after 10 seconds');
+            }
+            if (fetchError.message && fetchError.message.includes('Failed to fetch')) {
+                throw new Error('Network request failed. This might be a CORS issue or the API is unavailable.');
             }
             throw new Error(`Network error: ${fetchError.message}`);
         }
         
         if (!response.ok) {
-            throw new Error(`API test failed: HTTP ${response.status} ${response.statusText}`);
+            const errorText = await response.text().catch(() => '');
+            throw new Error(`API test failed: HTTP ${response.status} ${response.statusText}. ${errorText.substring(0, 100)}`);
         }
         
         const data = await response.json();
@@ -743,6 +757,10 @@ async function testAPIConnectivity() {
             message: error.message,
             stack: error.stack
         });
+        // Log to console for debugging on Vercel
+        if (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('vercel.com')) {
+            console.error('Running on Vercel - check network tab for CORS errors');
+        }
         return false;
     }
 }
@@ -805,8 +823,8 @@ function setCachedData(data) {
     }
 }
 
-// Fetch data for all resorts
-async function fetchAllResorts(showLoadingUI = true) {
+// Fetch data for all resorts (make it globally accessible for retry button)
+window.fetchAllResorts = async function(showLoadingUI = true) {
     // Prevent multiple simultaneous fetches
     if (isFetching) {
         console.log('Fetch already in progress, skipping duplicate call');
@@ -896,13 +914,14 @@ async function fetchAllResorts(showLoadingUI = true) {
             const apiAvailable = await testAPIConnectivity();
             if (!apiAvailable) {
                 clearTimeout(globalTimeout);
+                isFetching = false;
                 if (showLoadingUI) {
                     if (loadingState) {
                         loadingState.classList.add('hidden');
                         loadingState.style.display = 'none';
                     }
                     errorState.classList.remove('hidden');
-                    errorMessage.innerHTML = 'Unable to connect to the weather API.<br><br>Possible causes:<br>• CORS policy blocking requests<br>• API temporarily unavailable<br>• Network connectivity issues<br><br>Please check the browser console (F12) for detailed error messages.';
+                    errorMessage.innerHTML = 'Unable to connect to the weather API.<br><br>Possible causes:<br>• CORS policy blocking requests<br>• API temporarily unavailable<br>• Network connectivity issues<br><br>Please check the browser console (F12) for detailed error messages.<br><br><button onclick="fetchAllResorts(true)" class="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg">Retry</button>';
                 }
                 console.error('API connectivity test failed - aborting fetch');
                 updateProgress('API test failed');
@@ -910,13 +929,14 @@ async function fetchAllResorts(showLoadingUI = true) {
             }
         } catch (testError) {
             clearTimeout(globalTimeout);
+            isFetching = false;
             if (showLoadingUI) {
                 if (loadingState) {
                     loadingState.classList.add('hidden');
                     loadingState.style.display = 'none';
                 }
                 errorState.classList.remove('hidden');
-                errorMessage.innerHTML = `Error during API connectivity test: ${testError.message}<br><br>Check the browser console (F12) for more details.`;
+                errorMessage.innerHTML = `Error during API connectivity test: ${testError.message}<br><br>Check the browser console (F12) for more details.<br><br><button onclick="fetchAllResorts(true)" class="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg">Retry</button>`;
             }
             console.error('Exception during API connectivity test:', testError);
             updateProgress('API test error');
@@ -1063,7 +1083,7 @@ async function fetchAllResorts(showLoadingUI = true) {
             }
         }, 1000);
     }
-}
+};
 
 // Generate vibrant color scheme for each resort card
 function getCardColors(index) {
