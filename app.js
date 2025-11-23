@@ -1,4 +1,6 @@
 // Global state for filtering and sorting
+console.log('app.js script loaded');
+
 let allResortData = []; // Store all fetched resort data
 let currentSearchTerm = '';
 let currentSortBy = 'name';
@@ -599,7 +601,25 @@ async function fetchResortData(resort) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
         
-        const response = await fetch(url, { signal: controller.signal });
+        let response;
+        try {
+            response = await fetch(url, { 
+                signal: controller.signal,
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                },
+                mode: 'cors',
+                cache: 'no-cache'
+            });
+        } catch (fetchError) {
+            clearTimeout(timeoutId);
+            // Check for CORS or network errors
+            if (fetchError.name === 'TypeError' && fetchError.message.includes('fetch')) {
+                throw new Error('Network error - CORS or connectivity issue. Check browser console for details.');
+            }
+            throw fetchError;
+        }
         clearTimeout(timeoutId);
         if (!response.ok) {
             let errorText = '';
@@ -659,6 +679,10 @@ async function fetchResortData(resort) {
             errorMessage = 'Request timeout - API took too long to respond';
         } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
             errorMessage = 'Network error - check your internet connection';
+        } else if (error.message && error.message.includes('CORS')) {
+            errorMessage = 'CORS error - API may not allow requests from this origin';
+        } else if (error.message && error.message.includes('Failed to fetch')) {
+            errorMessage = 'Network request failed - API may be unavailable';
         }
         
         return {
@@ -666,6 +690,36 @@ async function fetchResortData(resort) {
             error: errorMessage,
             success: false
         };
+    }
+}
+
+// Test API connectivity
+async function testAPIConnectivity() {
+    try {
+        const testUrl = 'https://api.open-meteo.com/v1/forecast?latitude=39.6061&longitude=-106.3550&hourly=snowfall&timezone=auto&forecast_days=1';
+        const response = await fetch(testUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+            },
+            mode: 'cors',
+            cache: 'no-cache'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`API test failed: HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        if (data.error) {
+            throw new Error(`API error: ${data.reason || data.error}`);
+        }
+        
+        console.log('API connectivity test passed');
+        return true;
+    } catch (error) {
+        console.error('API connectivity test failed:', error);
+        return false;
     }
 }
 
@@ -682,19 +736,102 @@ async function fetchAllResorts() {
     errorState.classList.add('hidden');
     resortsContainer.innerHTML = '';
     
+    console.log(`Starting to fetch data for ${resorts.length} resorts...`);
+    
+    // Update loading progress
+    const loadingProgress = document.getElementById('loadingProgress');
+    const updateProgress = (message) => {
+        if (loadingProgress) {
+            loadingProgress.textContent = message;
+        }
+        console.log(message);
+    };
+    
+    updateProgress(`Testing API connectivity...`);
+    
+    // Set a global timeout to prevent infinite loading (5 minutes max)
+    let globalTimeout = setTimeout(() => {
+        loadingState.classList.add('hidden');
+        errorState.classList.remove('hidden');
+        errorMessage.textContent = 'Request timed out. The API may be slow or unavailable. Please try refreshing the page.';
+        console.error('Global timeout reached - aborting fetch');
+    }, 300000); // 5 minutes
+    
     try {
-        // Fetch all resorts in parallel
-        const results = await Promise.all(resorts.map(resort => fetchResortData(resort)));
+        // Test API connectivity first
+        updateProgress('Testing API connectivity...');
+        const apiAvailable = await testAPIConnectivity();
+        if (!apiAvailable) {
+            clearTimeout(globalTimeout);
+            loadingState.classList.add('hidden');
+            errorState.classList.remove('hidden');
+            errorMessage.textContent = 'Unable to connect to the weather API. Please check your internet connection and try again. If the problem persists, the API may be temporarily unavailable. Check the browser console (F12) for detailed error messages.';
+            console.error('API connectivity test failed - aborting fetch');
+            updateProgress('API test failed');
+            return;
+        }
+        
+        updateProgress('API test passed. Starting to fetch resort data...');
+        
+        // Fetch resorts in batches to avoid overwhelming the API
+        // Process in smaller batches to reduce rate limiting issues
+        const batchSize = 5; // Reduced batch size
+        const results = [];
+        const totalBatches = Math.ceil(resorts.length / batchSize);
+        
+        for (let i = 0; i < resorts.length; i += batchSize) {
+            const batch = resorts.slice(i, i + batchSize);
+            const batchNumber = Math.floor(i / batchSize) + 1;
+            const progressMsg = `Fetching batch ${batchNumber}/${totalBatches} (${i + 1}-${Math.min(i + batchSize, resorts.length)} of ${resorts.length})...`;
+            updateProgress(progressMsg);
+            console.log(progressMsg);
+            
+            try {
+                const batchResults = await Promise.all(
+                    batch.map(resort => fetchResortData(resort))
+                );
+                results.push(...batchResults);
+                
+                const successCount = batchResults.filter(r => r.success).length;
+                const batchCompleteMsg = `Batch ${batchNumber}/${totalBatches} completed: ${successCount}/${batch.length} successful`;
+                updateProgress(batchCompleteMsg);
+                console.log(batchCompleteMsg);
+            } catch (batchError) {
+                console.error(`Error in batch ${batchNumber}:`, batchError);
+                // Add error results for this batch
+                batch.forEach(resort => {
+                    results.push({
+                        ...resort,
+                        error: batchError.message,
+                        success: false
+                    });
+                });
+            }
+            
+            // Longer delay between batches to avoid rate limiting (500ms)
+            if (i + batchSize < resorts.length) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+        
+        clearTimeout(globalTimeout);
+        
+        const successCount = results.filter(r => r.success).length;
+        const errorCount = results.filter(r => !r.success).length;
+        updateProgress(`Completed! ${successCount} successful, ${errorCount} errors`);
         
         // Hide loading state
         loadingState.classList.add('hidden');
+        
+        console.log(`Completed fetching data. Success: ${successCount}, Errors: ${errorCount}`);
         
         // Check for errors
         const errors = results.filter(r => !r.success);
         if (errors.length > 0) {
             errorState.classList.remove('hidden');
-            const errorResorts = errors.map(r => r.name).join(', ');
-            errorMessage.textContent = `Failed to load data for ${errors.length} resort(s): ${errorResorts}. Some data may be incomplete.`;
+            const errorResorts = errors.slice(0, 5).map(r => r.name).join(', ');
+            const moreErrors = errors.length > 5 ? ` and ${errors.length - 5} more` : '';
+            errorMessage.textContent = `Failed to load data for ${errors.length} resort(s): ${errorResorts}${moreErrors}. Some data may be incomplete.`;
             // Log detailed errors to console for debugging
             errors.forEach(resort => {
                 console.error(`Failed to load ${resort.name}:`, resort.error);
@@ -712,10 +849,12 @@ async function fetchAllResorts() {
         applyFiltersAndSort();
         
     } catch (error) {
+        clearTimeout(globalTimeout);
         loadingState.classList.add('hidden');
         errorState.classList.remove('hidden');
-        errorMessage.textContent = `Failed to fetch data: ${error.message}`;
+        errorMessage.textContent = `Failed to fetch data: ${error.message}. Please check the browser console for details.`;
         console.error('Error fetching resorts:', error);
+        console.error('Error stack:', error.stack);
     }
 }
 
@@ -842,38 +981,77 @@ function renderResorts(resortData) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize dark mode
-    initDarkMode();
+    console.log('Page loaded, initializing app...');
     
-    // Set up event listeners
-    const searchInput = document.getElementById('searchInput');
-    const sortSelect = document.getElementById('sortSelect');
-    const regionSelect = document.getElementById('regionSelect');
-    
-    // Search input event listener
-    searchInput.addEventListener('input', (e) => {
-        currentSearchTerm = e.target.value;
-        applyFiltersAndSort();
-    });
-    
-    // Region select event listener
-    regionSelect.addEventListener('change', (e) => {
-        currentRegionFilter = e.target.value;
-        applyFiltersAndSort();
-    });
-    
-    // Sort select event listener
-    sortSelect.addEventListener('change', (e) => {
-        currentSortBy = e.target.value;
-        applyFiltersAndSort();
-    });
-    
-    // Fetch initial data
-    fetchAllResorts();
-    
-    // Add refresh button handler
-    document.getElementById('refreshBtn').addEventListener('click', () => {
+    try {
+        // Initialize dark mode
+        initDarkMode();
+        console.log('Dark mode initialized');
+        
+        // Set up event listeners
+        const searchInput = document.getElementById('searchInput');
+        const sortSelect = document.getElementById('sortSelect');
+        const regionSelect = document.getElementById('regionSelect');
+        
+        if (!searchInput || !sortSelect || !regionSelect) {
+            throw new Error('Required DOM elements not found');
+        }
+        
+        console.log('Event listeners setting up...');
+        
+        // Search input event listener
+        searchInput.addEventListener('input', (e) => {
+            currentSearchTerm = e.target.value;
+            applyFiltersAndSort();
+        });
+        
+        // Region select event listener
+        regionSelect.addEventListener('change', (e) => {
+            currentRegionFilter = e.target.value;
+            applyFiltersAndSort();
+        });
+        
+        // Sort select event listener
+        sortSelect.addEventListener('change', (e) => {
+            currentSortBy = e.target.value;
+            applyFiltersAndSort();
+        });
+        
+        // Add refresh button handler
+        const refreshBtn = document.getElementById('refreshBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                console.log('Refresh button clicked');
+                fetchAllResorts();
+            });
+            console.log('Refresh button handler attached');
+        } else {
+            console.error('Refresh button not found');
+        }
+        
+        console.log('Starting initial data fetch...');
+        // Fetch initial data
         fetchAllResorts();
-    });
+        
+    } catch (error) {
+        console.error('Error during initialization:', error);
+        const errorState = document.getElementById('errorState');
+        const errorMessage = document.getElementById('errorMessage');
+        const loadingState = document.getElementById('loadingState');
+        
+        if (loadingState) loadingState.classList.add('hidden');
+        if (errorState) errorState.classList.remove('hidden');
+        if (errorMessage) errorMessage.textContent = `Initialization error: ${error.message}. Please check the browser console.`;
+    }
 });
+
+// Also try immediate execution if DOM is already loaded
+if (document.readyState === 'loading') {
+    console.log('DOM is still loading, waiting for DOMContentLoaded...');
+} else {
+    console.log('DOM already loaded, executing immediately...');
+    // Trigger the DOMContentLoaded handler manually
+    const event = new Event('DOMContentLoaded');
+    document.dispatchEvent(event);
+}
 
