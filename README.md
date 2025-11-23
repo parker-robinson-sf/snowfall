@@ -180,3 +180,4 @@ This project is open source and available for personal and educational use.
 - Styled with [TailwindCSS](https://tailwindcss.com/)
 - Font: [Inter](https://fonts.google.com/specimen/Inter)
 
+# snowfall
