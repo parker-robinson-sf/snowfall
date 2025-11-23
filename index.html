@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chase the Powder Tracker - Worldwide Ski Resorts</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @keyframes gradient-shift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        .animated-gradient {
+            background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab, #f093fb, #4facfe);
+            background-size: 400% 400%;
+            animation: gradient-shift 15s ease infinite;
+        }
+        .animated-gradient-dark {
+            background: linear-gradient(-45deg, #1a1a2e, #16213e, #0f3460, #533483, #2d1b3d, #1a1a2e);
+            background-size: 400% 400%;
+            animation: gradient-shift 15s ease infinite;
+        }
+        .sticky-filter-bar {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(10px);
+        }
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            width: 250px;
+            background: rgba(26, 26, 46, 0.95);
+            backdrop-filter: blur(10px);
+            border-right: 2px solid rgba(255, 255, 255, 0.1);
+            z-index: 40;
+            transition: transform 0.3s ease-in-out;
+            overflow-y: auto;
+        }
+        .sidebar-mobile-hidden {
+            transform: translateX(-100%);
+        }
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 35;
+            display: none;
+        }
+        .sidebar-overlay.active {
+            display: block;
+        }
+        @media (min-width: 768px) {
+            .sidebar-mobile-hidden {
+                transform: translateX(0);
+            }
+            .sidebar-overlay {
+                display: none !important;
+            }
+        }
+        .main-content {
+            transition: margin-left 0.3s ease-in-out;
+        }
+        @media (min-width: 768px) {
+            .main-content {
+                margin-left: 250px;
+            }
+        }
+    </style>
+</head>
+<body class="animated-gradient-dark dark min-h-screen" id="bodyElement">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-white mb-2 drop-shadow-lg">
+                ❄️ Chase the Powder Tracker
+            </h1>
+            <p class="text-white/90 text-lg drop-shadow-md">Daily snowfall data for top ski resorts worldwide</p>
+            <div class="mt-4 flex items-center justify-center gap-4">
+                <button id="refreshBtn" class="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:from-pink-600 hover:via-purple-600 hover:to-indigo-600 text-white px-6 py-2 rounded-lg font-medium transition-all shadow-lg hover:shadow-xl transform hover:scale-105">
+                    Refresh Data
+                </button>
+                <p id="lastUpdate" class="text-sm text-white/80 font-medium">Loading...</p>
+            </div>
+        </header>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-white/30 border-t-white"></div>
+            <p class="mt-4 text-white font-medium">Fetching snowfall data...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="hidden bg-gradient-to-r from-red-500 to-pink-500 border-2 border-white/50 text-white px-6 py-4 rounded-lg mb-6 shadow-xl">
+            <p class="font-semibold">Error loading data</p>
+            <p id="errorMessage" class="text-sm mt-1 text-white/90"></p>
+        </div>
+
+        <!-- Sticky Filter/Sort Bar -->
+        <div class="sticky-filter-bar mb-6">
+            <div class="bg-white/90 dark:bg-gray-800/90 rounded-xl shadow-xl p-4 border-2 border-white/50 dark:border-gray-700/50">
+                <div class="flex flex-col md:flex-row gap-4 items-center">
+                    <!-- Search Input -->
+                    <div class="flex-1 w-full md:w-auto">
+                        <input 
+                            type="text" 
+                            id="searchInput" 
+                            placeholder="Search by name, region, state, or country..." 
+                            class="w-full px-4 py-2 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 transition-all"
+                        />
+                    </div>
+                    
+                    <!-- Region Filter Dropdown -->
+                    <div class="w-full md:w-auto">
+                        <select 
+                            id="regionSelect" 
+                            class="w-full md:w-auto px-4 py-2 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 transition-all cursor-pointer"
+                        >
+                            <option value="all">All Regions</option>
+                            <option value="North America">North America</option>
+                            <option value="Asia / Far East">Asia / Far East</option>
+                            <option value="South America">South America</option>
+                            <option value="Oceania">Oceania</option>
+                            <option value="Eastern Europe / Balkans">Eastern Europe / Balkans</option>
+                            <option value="Nordic / Arctic">Nordic / Arctic</option>
+                            <option value="Europe">Europe</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Sort Dropdown -->
+                    <div class="w-full md:w-auto">
+                        <select 
+                            id="sortSelect" 
+                            class="w-full md:w-auto px-4 py-2 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 transition-all cursor-pointer"
+                        >
+                            <option value="name">Sort by Name</option>
+                            <option value="snowfall24h">Sort by 24h Snowfall</option>
+                            <option value="snowfall7d">Sort by 7-Day Total</option>
+                            <option value="lastUpdate">Sort by Most Recent</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Chips -->
+        <div id="filterChipsContainer" class="mb-4 flex flex-wrap gap-2 items-center justify-center md:justify-start">
+            <!-- Active filter chips will be inserted here -->
+        </div>
+
+        <!-- No Results Message -->
+        <div id="noResultsMessage" class="hidden text-center py-12">
+            <div class="bg-white/90 dark:bg-gray-800/90 rounded-xl shadow-xl p-8 border-2 border-white/50 dark:border-gray-700/50">
+                <p class="text-2xl font-bold text-gray-800 dark:text-white mb-2">No resorts match your filters</p>
+                <p class="text-gray-600 dark:text-gray-400">Try adjusting your search or sort criteria</p>
+            </div>
+        </div>
+
+        <!-- Resorts Grid -->
+        <div id="resortsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Resort cards will be inserted here -->
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
